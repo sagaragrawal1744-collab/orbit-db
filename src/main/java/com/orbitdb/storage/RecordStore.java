@@ -1,4 +1,3 @@
-
 package com.orbitdb.storage;
 
 import java.io.IOException;
@@ -43,6 +42,7 @@ public final class RecordStore {
                 targetPage.insert(record);
                 database.writePage(Page.create(
                         targetPage.getPageId(),
+                        PageType.DATA,
                         targetPage.toPayload()
                 ));
                 return;
@@ -52,7 +52,9 @@ public final class RecordStore {
             SlottedPage newPage = SlottedPage.create(expectedPageId);
             newPage.insert(record);
 
-            int allocatedPageId = database.allocatePage(newPage.toPayload());
+            int allocatedPageId = database.allocatePage(
+                    PageType.DATA, newPage.toPayload()
+            );
 
             if (allocatedPageId != expectedPageId)
                 throw new IOException("Unexpected allocated page ID");
@@ -84,12 +86,15 @@ public final class RecordStore {
     private SlottedPage loadPage(int pageId) throws IOException {
         try {
             Page storedPage = database.readPage(pageId);
+
+            if (storedPage.getType() != PageType.DATA)
+                throw new IOException("Expected DATA page: " + pageId);
+
             return SlottedPage.fromPayload(
-                    storedPage.getPayload(),
-                    pageId
+                    storedPage.getPayload(), pageId
             );
         } catch (IllegalArgumentException | IllegalStateException e) {
-            throw new IOException("Corrupted slotted page: " + pageId, e);
+            throw new IOException("Corrupted data page: " + pageId, e);
         }
     }
 }

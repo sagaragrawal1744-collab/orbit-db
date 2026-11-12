@@ -1,4 +1,3 @@
-
 package com.orbitdb.storage;
 
 import org.junit.jupiter.api.Test;
@@ -35,6 +34,16 @@ class DatabaseFileTest {
     }
 
     @Test
+    void shouldStoreMetadataPageWithMetadataType() throws Exception {
+        Path file = directory.resolve("metadata.db");
+
+        try (DatabaseFile ignored = DatabaseFile.create(file);
+             PageStore store = new PageStore(file)) {
+            assertEquals(PageType.METADATA, store.readPage(0).getType());
+        }
+    }
+
+    @Test
     void shouldNotOverwriteExistingDatabase() throws Exception {
         Path file = directory.resolve("orbit.db");
 
@@ -58,6 +67,17 @@ class DatabaseFileTest {
     }
 
     @Test
+    void shouldRejectDatabaseWithWrongMetadataPageType() throws Exception {
+        Path file = directory.resolve("wrong-metadata.db");
+
+        try (PageStore store = new PageStore(file)) {
+            store.writePage(Page.create(0, new byte[24]));
+        }
+
+        assertThrows(IOException.class, () -> DatabaseFile.open(file));
+    }
+
+    @Test
     void shouldNotCreateMissingDatabaseWhenOpening() {
         Path file = directory.resolve("missing.db");
 
@@ -78,6 +98,7 @@ class DatabaseFileTest {
             assertEquals(2, db.allocatePage("Second".getBytes()));
             assertEquals(2, db.getAllocatedPageCount());
 
+            assertEquals(PageType.RAW, db.readPage(1).getType());
             assertArrayEquals(
                     "First".getBytes(),
                     db.readPage(1).getPayload()
@@ -91,6 +112,43 @@ class DatabaseFileTest {
             assertArrayEquals(
                     "Third".getBytes(),
                     db.readPage(3).getPayload()
+            );
+        }
+    }
+
+    @Test
+    void shouldAllocatePagesWithExplicitTypes() throws Exception {
+        Path file = directory.resolve("typed-pages.db");
+
+        try (DatabaseFile db = DatabaseFile.create(file)) {
+            assertEquals(
+                    1,
+                    db.allocatePage(PageType.DATA, new byte[]{1})
+            );
+
+            assertEquals(
+                    2,
+                    db.allocatePage(PageType.INDEX, new byte[]{2})
+            );
+
+            assertEquals(PageType.DATA, db.readPage(1).getType());
+            assertEquals(PageType.INDEX, db.readPage(2).getType());
+        }
+
+        try (DatabaseFile db = DatabaseFile.open(file)) {
+            assertEquals(PageType.DATA, db.readPage(1).getType());
+            assertEquals(PageType.INDEX, db.readPage(2).getType());
+        }
+    }
+
+    @Test
+    void shouldRejectMetadataAsAllocatedPageType() throws Exception {
+        Path file = directory.resolve("invalid-type.db");
+
+        try (DatabaseFile db = DatabaseFile.create(file)) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> db.allocatePage(PageType.METADATA, new byte[0])
             );
         }
     }

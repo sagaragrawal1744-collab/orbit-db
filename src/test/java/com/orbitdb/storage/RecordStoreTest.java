@@ -1,4 +1,3 @@
-
 package com.orbitdb.storage;
 
 import org.junit.jupiter.api.Test;
@@ -32,11 +31,11 @@ class RecordStoreTest {
             store.insert(original);
 
             assertEquals(1, database.getAllocatedPageCount());
+            assertEquals(PageType.DATA, database.readPage(1).getType());
         }
 
         try (DatabaseFile database = DatabaseFile.open(path)) {
             RecordStore store = new RecordStore(database);
-
             Optional<DbRecord> result = store.findById(1);
 
             assertTrue(result.isPresent());
@@ -59,7 +58,6 @@ class RecordStoreTest {
             store.insert(new DbRecord(2, Map.of("data", largeValue)));
 
             assertEquals(2, database.getAllocatedPageCount());
-
             assertTrue(store.findById(1).isPresent());
             assertTrue(store.findById(2).isPresent());
         }
@@ -119,6 +117,22 @@ class RecordStoreTest {
             assertEquals(2, database.getAllocatedPageCount());
             assertTrue(store.findById(10).isPresent());
             assertTrue(store.findById(20).isPresent());
+        }
+    }
+
+    @Test
+    void shouldRejectRawPagesWhenReadingRecords() throws IOException {
+        Path path = tempDir.resolve("wrong-page-type.db");
+
+        try (DatabaseFile database = DatabaseFile.create(path)) {
+            database.allocatePage(new byte[0]);
+
+            RecordStore store = new RecordStore(database);
+
+            assertThrows(
+                    IOException.class,
+                    () -> store.findById(1)
+            );
         }
     }
 }

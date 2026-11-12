@@ -1,4 +1,3 @@
-
 package com.orbitdb.storage;
 
 import java.io.IOException;
@@ -11,7 +10,7 @@ import java.nio.file.Path;
 public final class DatabaseFile implements AutoCloseable {
 
     private static final int MAGIC = 0x4F524244;
-    private static final int FORMAT_VERSION = 2;
+    private static final int FORMAT_VERSION = 3;
     private static final int METADATA_SIZE = 24;
 
     private final Path path;
@@ -35,6 +34,7 @@ public final class DatabaseFile implements AutoCloseable {
 
         try {
             store = new PageStore(file);
+
             DatabaseFile db = new DatabaseFile(
                     file, store, System.currentTimeMillis(), 1
             );
@@ -69,7 +69,12 @@ public final class DatabaseFile implements AutoCloseable {
         PageStore store = new PageStore(file);
 
         try {
-            byte[] payload = store.readPage(0).getPayload();
+            Page metadataPage = store.readPage(0);
+
+            if (metadataPage.getType() != PageType.METADATA)
+                throw new IOException("Invalid metadata page type");
+
+            byte[] payload = metadataPage.getPayload();
 
             if (payload.length != METADATA_SIZE)
                 throw new IOException("Invalid database metadata");
@@ -88,9 +93,7 @@ public final class DatabaseFile implements AutoCloseable {
                     createdAt <= 0 || nextPageId < 1)
                 throw new IOException("Invalid database file");
 
-            return new DatabaseFile(
-                    file, store, createdAt, nextPageId
-            );
+            return new DatabaseFile(file, store, createdAt, nextPageId);
         } catch (IOException | RuntimeException e) {
             try {
                 store.close();
@@ -107,11 +110,19 @@ public final class DatabaseFile implements AutoCloseable {
 
     public synchronized int allocatePage(byte[] payload)
             throws IOException {
+        return allocatePage(PageType.RAW, payload);
+    }
+
+    public synchronized int allocatePage(PageType type, byte[] payload)
+            throws IOException {
+        if (type == null || type == PageType.METADATA)
+            throw new IllegalArgumentException("Invalid allocated page type");
+
         if (nextPageId == Integer.MAX_VALUE)
             throw new IOException("Database page limit reached");
 
         int pageId = nextPageId;
-        store.writePage(Page.create(pageId, payload));
+        store.writePage(Page.create(pageId, type, payload));
 
         nextPageId++;
 
@@ -133,6 +144,9 @@ public final class DatabaseFile implements AutoCloseable {
     }
 
     public synchronized void writePage(Page page) throws IOException {
+        if (page == null)
+            throw new IllegalArgumentException("Page cannot be null");
+
         int pageId = page.getPageId();
 
         if (pageId <= 0 || pageId >= nextPageId)
@@ -151,7 +165,9 @@ public final class DatabaseFile implements AutoCloseable {
         metadata.putLong(createdAt);
         metadata.putInt(nextPageId);
 
-        store.writePage(Page.create(0, metadata.array()));
+        store.writePage(Page.create(
+                0, PageType.METADATA, metadata.array()
+        ));
     }
 
     public Path getPath() {
